@@ -5,7 +5,7 @@ import (
 	"os"
 	"testing"
 
-	api "github.com/paulja/go-log/api"
+	api "github.com/paulja/go-log/api/v1"
 	"github.com/stretchr/testify/require"
 )
 
