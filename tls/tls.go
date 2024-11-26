@@ -26,6 +26,17 @@ var (
 	ClientKey []byte
 )
 
+var (
+	//go:embed root-client.pem
+	UserRootCert []byte
+	//go:embed root-client-key.pem
+	UserRootKey []byte
+	//go:embed nobody-client.pem
+	UserNobodyCert []byte
+	//go:embed nobody-client-key.pem
+	UserNobodyKey []byte
+)
+
 func ServerConfig() (*tls.Config, error) {
 	cert, err := tls.X509KeyPair(ServerCert, ServerKey)
 	if err != nil {
@@ -44,8 +55,8 @@ func ServerConfig() (*tls.Config, error) {
 	return tlsConfig, nil
 }
 
-func ClientConfig() (*tls.Config, error) {
-	cert, err := tls.X509KeyPair(ClientCert, ClientKey)
+func ClientConfig(user string) (*tls.Config, error) {
+	cert, err := loadUserCerts(user)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load client cert pair: %v", err)
 	}
@@ -59,4 +70,16 @@ func ClientConfig() (*tls.Config, error) {
 		ServerName:   "localhost",
 	}
 	return tlsConfig, nil
+}
+
+func loadUserCerts(name string) (cert tls.Certificate, err error) {
+	switch name {
+	case "root":
+		cert, err = tls.X509KeyPair(UserRootCert, UserRootKey)
+	case "nobody":
+		cert, err = tls.X509KeyPair(UserNobodyCert, UserNobodyKey)
+	case "":
+		cert, err = tls.X509KeyPair(ClientCert, ClientKey)
+	}
+	return cert, err
 }

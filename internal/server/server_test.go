@@ -7,33 +7,57 @@ import (
 	"testing"
 
 	api "github.com/paulja/go-log/api/v1"
+	"github.com/paulja/go-log/internal/auth"
 	"github.com/paulja/go-log/internal/log"
 	"github.com/paulja/go-log/tls"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/status"
 )
 
 func TestServer(t *testing.T) {
-	for scenario, fn := range map[string]func(
-		t *testing.T,
-		client api.LogClient,
-		config *Config,
-	){
-		"produce/consume a message to/from the log succeeds": testProduceConsume,
-		"produce/consume stream succeeds":                    testProduceConsumeStream,
-		"consume past log boundary fails":                    testConsumePastBoundary,
+	pwd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("Work directory: %v", pwd)
+	for _, s := range []struct {
+		scenario string
+		user     string
+		fn       func(
+			t *testing.T,
+			client api.LogClient,
+			config *Config,
+		)
+	}{
+		{
+			scenario: "produce/consume a message to/from the log succeeds",
+			user:     "root", fn: testProduceConsume,
+		},
+		{
+			scenario: "produce/consume stream succeeds",
+			user:     "root", fn: testProduceConsumeStream,
+		},
+		{
+			scenario: "consume past log boundary fails",
+			user:     "root", fn: testConsumePastBoundary,
+		},
+		{
+			scenario: "unauthorised fails",
+			user:     "nobody", fn: testUnauthorised,
+		},
 	} {
-		t.Run(scenario, func(t *testing.T) {
-			client, config, teardown := setupTest(t, nil)
+		t.Run(s.scenario, func(t *testing.T) {
+			client, config, teardown := setupTest(t, s.user, nil)
 			defer teardown()
-			fn(t, client, config)
+			s.fn(t, client, config)
 		})
 	}
 }
 
-func setupTest(t *testing.T, fn func(*Config)) (
+func setupTest(t *testing.T, user string, fn func(*Config)) (
 	client api.LogClient,
 	cfg *Config,
 	teardown func(),
@@ -42,7 +66,8 @@ func setupTest(t *testing.T, fn func(*Config)) (
 	l, err := net.Listen("tcp", ":0")
 	require.NoError(t, err)
 
-	tls, err := tls.ClientConfig()
+	t.Logf("Run As User: %s", user)
+	tls, err := tls.ClientConfig(user)
 	require.NoError(t, err)
 	clientOptions := []grpc.DialOption{
 		grpc.WithTransportCredentials(credentials.NewTLS(tls)),
@@ -56,7 +81,8 @@ func setupTest(t *testing.T, fn func(*Config)) (
 	clog, err := log.NewLog(dir, log.Config{})
 	require.NoError(t, err)
 
-	cfg = &Config{CommitLog: clog}
+	authoriser := auth.NewDefault()
+	cfg = &Config{CommitLog: clog, Authoriser: authoriser}
 	if fn != nil {
 		fn(cfg)
 	}
@@ -77,7 +103,11 @@ func setupTest(t *testing.T, fn func(*Config)) (
 	}
 }
 
-func testProduceConsume(t *testing.T, client api.LogClient, config *Config) {
+func testProduceConsume(
+	t *testing.T,
+	client api.LogClient,
+	config *Config,
+) {
 	ctx := context.Background()
 
 	want := &api.Record{
@@ -174,5 +204,35 @@ func testProduceConsumeStream(
 				Offset: uint64(i),
 			})
 		}
+	}
+}
+
+func testUnauthorised(
+	t *testing.T,
+	client api.LogClient,
+	config *Config,
+) {
+	ctx := context.Background()
+	produce, err := client.Produce(ctx, &api.ProduceRequest{
+		Record: &api.Record{
+			Value: []byte("hello world"),
+		},
+	})
+	if produce != nil {
+		t.Fatalf("produce response should be nil")
+	}
+	gotCode, wantCode := status.Code(err), codes.PermissionDenied
+	if gotCode != wantCode {
+		t.Fatalf("got code: %d, want: %d", gotCode, wantCode)
+	}
+	consume, err := client.Consume(ctx, &api.ConsumeRequest{
+		Offset: 0,
+	})
+	if consume != nil {
+		t.Fatalf("consume response should be nil")
+	}
+	gotCode, wantCode = status.Code(err), codes.PermissionDenied
+	if gotCode != wantCode {
+		t.Fatalf("got code: %d, want: %d", gotCode, wantCode)
 	}
 }
