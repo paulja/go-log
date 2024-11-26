@@ -4,7 +4,9 @@ import (
 	"context"
 
 	api "github.com/paulja/go-log/api/v1"
+	"github.com/paulja/go-log/tls"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 )
 
 type Config struct {
@@ -14,7 +16,13 @@ type Config struct {
 var _ api.LogServer = (*server)(nil)
 
 func NewGRPCServer(config *Config) (*grpc.Server, error) {
-	gsrv := grpc.NewServer()
+	tls, err := tls.ServerConfig()
+	if err != nil {
+		return nil, err
+	}
+	gsrv := grpc.NewServer(
+		grpc.Creds(credentials.NewTLS(tls)),
+	)
 	srv, err := newgrpcServer(config)
 	if err != nil {
 		return nil, err

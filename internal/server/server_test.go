@@ -8,9 +8,10 @@ import (
 
 	api "github.com/paulja/go-log/api/v1"
 	"github.com/paulja/go-log/internal/log"
+	"github.com/paulja/go-log/tls"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/status"
 )
 
@@ -41,7 +42,11 @@ func setupTest(t *testing.T, fn func(*Config)) (
 	l, err := net.Listen("tcp", ":0")
 	require.NoError(t, err)
 
-	clientOptions := []grpc.DialOption{grpc.WithTransportCredentials(insecure.NewCredentials())}
+	tls, err := tls.ClientConfig()
+	require.NoError(t, err)
+	clientOptions := []grpc.DialOption{
+		grpc.WithTransportCredentials(credentials.NewTLS(tls)),
+	}
 	cc, err := grpc.NewClient(l.Addr().String(), clientOptions...)
 	require.NoError(t, err)
 
