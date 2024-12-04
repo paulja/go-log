@@ -145,6 +145,7 @@ func (l *Log) Truncate(lowest uint64) error {
 			}
 			continue
 		}
+		segments = append(segments, s)
 	}
 	l.segments = segments
 	return nil
